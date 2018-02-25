@@ -2,6 +2,7 @@ import tensorflow as tf
 from svhn import SVHN
 import matplotlib.pyplot as plt
 from random import randint
+import scipy.io as spio
 
 # Parameters
 learning_rate = 1e-3
@@ -13,9 +14,11 @@ display_step = 10
 channels = 3
 image_size = 32
 n_classes = 10
-dropout = 1.0
-hidden_1 = 256
-hidden_2 = 128
+keep_prob1_value, keep_prob2_value, keep_prob3_value, keep_prob4_value = 0.5, 0.5, 0.5, 0.5
+hidden_1 = 512
+hidden_2 = 256
+hidden_3 = 128
+hidden_4 = 64
 depth_1 = 16
 depth_2 = 32
 depth_3 = 64
@@ -55,7 +58,9 @@ weights = {
     "layer3": weight_variable([filter_size, filter_size, depth_2, depth_3]),
     "layer4": weight_variable([image_size // 8 * image_size // 8 * depth_3, hidden_1]),
     "layer5": weight_variable([hidden_1, hidden_2]),
-    "layer6": weight_variable([hidden_2, n_classes])
+    "layer6": weight_variable([hidden_2, hidden_3]),
+    "layer7": weight_variable([hidden_3, hidden_4]),
+    "layer8": weight_variable([hidden_4, n_classes])
 }
 
 biases = {
@@ -64,7 +69,9 @@ biases = {
     "layer3": bias_variable([depth_3]),
     "layer4": bias_variable([hidden_1]),
     "layer5": bias_variable([hidden_2]),
-    "layer6": bias_variable([n_classes])
+    "layer6": bias_variable([hidden_3]),
+    "layer7": bias_variable([hidden_4]),
+    "layer8": bias_variable([n_classes])
 }
 
 
@@ -76,40 +83,48 @@ def normalize(x):
 
 
 def cnn(x):
-    # Batch normalization
     x = normalize(x)
 
-    # Convolution 1 -> RELU -> Max Pool
     convolution1 = convolution(x, weights["layer1"])
     relu1 = tf.nn.relu(convolution1 + biases["layer1"])
     maxpool1 = max_pool(relu1)
 
-    # Convolution 2 -> RELU -> Max Pool
     convolution2 = convolution(maxpool1, weights["layer2"])
     relu2 = tf.nn.relu(convolution2 + biases["layer2"])
     maxpool2 = max_pool(relu2)
 
-    # Convolution 3 -> RELU -> Max Pool
     convolution3 = convolution(maxpool2, weights["layer3"])
     relu3 = tf.nn.relu(convolution3 + biases["layer3"])
     maxpool3 = max_pool(relu3)
 
-    # Fully Connected Layer
     shape = maxpool3.get_shape().as_list()
     reshape = tf.reshape(maxpool3, [-1, shape[1] * shape[2] * shape[3]])
     fc4 = tf.nn.relu(tf.matmul(reshape, weights["layer4"]) + biases["layer4"])
 
-    # Dropout Layer
-    keep_prob_constant = tf.placeholder(tf.float32)
-    fc4_dropout = tf.nn.dropout(fc4, keep_prob_constant)
+    keep_prob1 = tf.placeholder(tf.float32)
+    fc4_dropout = tf.nn.dropout(fc4, keep_prob1)
 
-    fc5 = tf.nn.relu(tf.matmul(fc4_dropout, weights["layer5"]) + biases["layer5"])
+    fc5 = tf.nn.sigmoid(tf.matmul(fc4_dropout, weights["layer5"]) + biases["layer5"])
 
-    return tf.matmul(fc5, weights["layer6"]) + biases["layer6"], keep_prob_constant
+    keep_prob2 = tf.placeholder(tf.float32)
+    fc5_dropout = tf.nn.dropout(fc5, keep_prob2)
+
+    fc6 = tf.nn.relu(tf.matmul(fc5_dropout, weights["layer6"]) + biases["layer6"])
+
+    keep_prob3 = tf.placeholder(tf.float32)
+    fc6_dropout = tf.nn.dropout(fc6, keep_prob3)
+
+    fc7 = tf.nn.relu(tf.matmul(fc6_dropout, weights["layer7"]) + biases["layer7"])
+
+    keep_prob4 = tf.placeholder(tf.float32)
+    fc7_dropout = tf.nn.dropout(fc7, keep_prob4)
+
+    y_conv = tf.matmul(fc7_dropout, weights["layer8"]) + biases["layer8"]
+    return y_conv, keep_prob1, keep_prob2, keep_prob3, keep_prob4
 
 
 # Build the graph for the deep net
-y_conv, keep_prob = cnn(X)
+y_conv, keep_prob1, keep_prob2, keep_prob3, keep_prob4 = cnn(X)
 
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y_conv))
 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(cost)
@@ -117,20 +132,18 @@ correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(Y, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 with tf.Session() as sess:
-    # Initialize Tensorflow variables
     sess.run(tf.global_variables_initializer())
 
-    # Variables useful for batch creation
-    start = 0
-    end = 0
-
-    # The accuracy and loss for every iteration in train and test set
     train_accuracies = []
     train_losses = []
     test_accuracies = []
     test_losses = []
     validation_accuracies = []
     validation_losses = []
+    keep_prob1_vals = []
+    keep_prob2_vals = []
+    keep_prob3_vals = []
+    keep_prob4_vals = []
     over_fit_vals = []
 
     for i in range(iterations):
@@ -147,17 +160,33 @@ with tf.Session() as sess:
         batch_x_test = svhn.test_data[ind_test]
         batch_y_test = svhn.test_labels[ind_test]
 
-        sess.run(optimizer, feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob: 1.0})
+        sess.run(optimizer, feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob1: keep_prob1_value,
+                                       keep_prob2: keep_prob2_value, keep_prob3: keep_prob4_value,
+                                       keep_prob4: keep_prob4_value})
 
         if (i + 1) % display_step == 0 or i == 0:
             _accuracy_train, _cost_train = sess.run([accuracy, cost],
-                                                    feed_dict={X: batch_x, Y: batch_y, keep_prob: 1.0})
+                                                    feed_dict={X: batch_x, Y: batch_y, keep_prob1: 1,
+                                                               keep_prob2: 1,
+                                                               keep_prob3: 1,
+                                                               keep_prob4: 1})
             _accuracy_test, _cost_test = sess.run([accuracy, cost],
-                                                  feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob: 1.0})
+                                                  feed_dict={X: batch_x_test, Y: batch_y_test,
+                                                             keep_prob1: 1,
+                                                             keep_prob2: 1, keep_prob3: 1,
+                                                             keep_prob4: 1})
             _accuracy_validation, _cost_validation = sess.run([accuracy, cost],
                                                               feed_dict={X: batch_x_validation, Y: batch_y_validation,
-                                                                         keep_prob: 1.0})
+                                                                         keep_prob1: 1,
+                                                                         keep_prob2: 1,
+                                                                         keep_prob3: 1,
+                                                                         keep_prob4: 1})
             over_fit_vals.append(_cost_validation / _cost_test)
+            keep_prob1_vals.append(keep_prob1_value)
+            keep_prob2_vals.append(keep_prob2_value)
+            keep_prob3_vals.append(keep_prob3_value)
+            keep_prob4_vals.append(keep_prob4_value)
+
             print("Step: {0:6d}, Train Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_train,
                                                                                     _cost_train))
             print("Step: {0:6d}, Validation Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_validation,
@@ -170,8 +199,10 @@ with tf.Session() as sess:
             validation_losses.append(_cost_validation)
             test_accuracies.append(_accuracy_test)
             test_losses.append(_cost_test)
+            if _accuracy_train > 0.9:
+                break
 
-    plt.subplot(311)
+    plt.subplot(411)
     plt.grid(True)
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
@@ -181,7 +212,7 @@ with tf.Session() as sess:
     plt.legend([test_accuracies_legend, train_accuracies_legend, validation_accuracies_legend],
                ['Train', 'Test', 'Validation'])
 
-    plt.subplot(312)
+    plt.subplot(412)
     plt.grid(True)
     plt.xlabel('Epoch')
     plt.ylabel('MSE')
@@ -190,10 +221,26 @@ with tf.Session() as sess:
     validation_losses_legend, = plt.plot(validation_losses, label='validation_mse')
     plt.legend([train_losses_legend, test_losses_legend, validation_losses_legend], ['Test', 'Train', 'Validation'])
 
-    plt.subplot(313)
+    plt.subplot(413)
     plt.grid(True)
     plt.xlabel('Epoch')
     plt.ylabel(r'$v_{ofc}$')
     plt.plot(over_fit_vals)
 
+    plt.subplot(414)
+    plt.grid(True)
+    plt.xlabel('Epoch')
+    plt.ylabel(r'$kp_i$')
+    keep_prob1_legend, = plt.plot(keep_prob1_vals, label='kp1')
+    keep_prob2_legend, = plt.plot(keep_prob2_vals, label='kp2')
+    keep_prob3_legend, = plt.plot(keep_prob3_vals, label='kp3')
+    keep_prob4_legend, = plt.plot(keep_prob4_vals, label='kp4')
+
+    plt.legend([keep_prob1_legend, keep_prob2_legend, keep_prob3_legend, keep_prob4_legend],
+               [r'$kp_1$', r'$kp_2$', r'$kp_3$', r'$kp_4$'])
     plt.show()
+
+    ind_train = [randint(0, svhn.train_examples - 1) for _ in range(batch_size * 50)]
+    test_output = sess.run(y_conv, feed_dict={x: svhn.train_data[ind_train]})
+
+    spio.savemat('conv_output.mat', {'test_output': test_output, 'test_target': svhn.train_labels[ind_train]})
