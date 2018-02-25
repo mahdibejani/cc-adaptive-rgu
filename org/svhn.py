@@ -1,17 +1,26 @@
 import numpy as np
 import scipy.io as sio
+from random import random
 
 
 class SVHN:
-
-    def __init__(self, file_path, n_classes, use_extra=False, gray=False):
+    def __init__(self, file_path, n_classes, gray=False):
         self.n_classes = n_classes
 
-        # # Load Train Set
+        # # Load Train & Validation Set
         train = sio.loadmat(file_path + "/train_32x32.mat")
-        self.train_labels = self.__one_hot_encode(train['y'])
-        self.train_examples = train['X'].shape[3]
-        self.train_data = self.__store_data(train['X'].astype("float32"), self.train_examples, gray)
+        self.train_validation_labels = self.__one_hot_encode(train['y'])
+        self.train_validation_examples = train['X'].shape[3]
+        self.train_validation_data = self.__store_data(train['X'].astype("float32"), self.train_validation_examples,
+                                                       gray)
+
+        self.train_labels = self.train_validation_labels[0:int(0.7 * self.train_validation_examples)]
+        self.train_examples = int(train['X'].shape[3] * 0.7)
+        self.train_data = self.train_validation_data[0:int(0.7 * self.train_validation_examples)]
+
+        self.validation_labels = self.train_validation_labels[int(0.7 * self.train_validation_examples) + 1:]
+        self.validation_examples = int(train['X'].shape[3] * 0.3)
+        self.validation_data = self.train_validation_data[int(0.7 * self.train_validation_examples) + 1:]
 
         # Load Test Set
         test = sio.loadmat("../res/test_32x32.mat")
@@ -19,26 +28,7 @@ class SVHN:
         self.test_examples = test['X'].shape[3]
         self.test_data = self.__store_data(test['X'].astype("float32"), self.test_examples, gray)
 
-        # Load Extra dataset as additional training data if necessary
-        if use_extra:
-            extra = sio.loadmat(file_path + "/extra_32x32.mat")
-            self.train_labels = np.append(self.train_labels, self.__one_hot_encode(extra['y']), axis=0)
-            extra_examples = extra['X'].shape[3]
-            self.train_examples += extra_examples
-            self.train_data = np.append(self.train_data, self.__store_data(extra['X'].astype("float32"),
-                                                                           extra_examples, gray), axis=0)
-            # shuffle values
-            idx = np.arange(self.train_data.shape[0])
-            self.train_data = self.train_data[idx]
-            self.train_labels = self.train_labels[idx]
-
     def __one_hot_encode(self, data):
-        """Creates a one-hot encoding vector
-            Args:
-                data: The data to be converted
-            Returns:
-                An array of one-hot encoded items
-        """
         n = data.shape[0]
         one_hot = np.zeros(shape=(data.shape[0], self.n_classes))
         for s in range(n):

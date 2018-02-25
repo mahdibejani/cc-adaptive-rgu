@@ -7,7 +7,7 @@ from random import randint
 learning_rate = 1e-3
 iterations = 4000
 batch_size = 300
-display_step = 10
+display_step = 100
 
 # Network Parameters
 channels = 3
@@ -42,7 +42,7 @@ def max_pool(x):
 
 
 # Load data
-svhn = SVHN("../res", n_classes, gray=False)
+svhn = SVHN("../res", n_classes, use_extra=False, gray=False)
 
 # Create the model
 X = tf.placeholder(tf.float32, [None, image_size, image_size, channels])
@@ -129,45 +129,32 @@ with tf.Session() as sess:
     train_losses = []
     test_accuracies = []
     test_losses = []
-    validation_accuracies = []
-    validation_losses = []
     over_fit_vals = []
 
     for i in range(iterations):
         ind_train = [randint(0, svhn.train_examples - 1) for _ in range(batch_size)]
-        ind_validation = [randint(0, svhn.validation_examples - 1) for _ in range(batch_size)]
         ind_test = [randint(0, svhn.test_examples - 1) for _ in range(batch_size)]
 
         batch_x = svhn.train_data[ind_train]
         batch_y = svhn.train_labels[ind_train]
 
-        batch_x_validation = svhn.validation_data[ind_validation]
-        batch_y_validation = svhn.validation_labels[ind_validation]
-
         batch_x_test = svhn.test_data[ind_test]
         batch_y_test = svhn.test_labels[ind_test]
 
-        sess.run(optimizer, feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob: 1.0})
+        sess.run(optimizer, feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob: 0.8})
 
         if (i + 1) % display_step == 0 or i == 0:
             _accuracy_train, _cost_train = sess.run([accuracy, cost],
                                                     feed_dict={X: batch_x, Y: batch_y, keep_prob: 1.0})
             _accuracy_test, _cost_test = sess.run([accuracy, cost],
                                                   feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob: 1.0})
-            _accuracy_validation, _cost_validation = sess.run([accuracy, cost],
-                                                              feed_dict={X: batch_x_validation, Y: batch_y_validation,
-                                                                         keep_prob: 1.0})
-            over_fit_vals.append(_cost_validation / _cost_test)
-            print("Step: {0:6d}, Train Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_train,
-                                                                                    _cost_train))
-            print("Step: {0:6d}, Validation Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_validation,
-                                                                                         _cost_validation))
+            over_fit_vals.append(_cost_train / _cost_test)
+            print("Step: {0:6d}, Training Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_train,
+                                                                                       _cost_train))
             print("Step: {0:6d}, Test Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_test,
                                                                                    _cost_test))
             train_accuracies.append(_accuracy_train)
             train_losses.append(_cost_train)
-            validation_accuracies.append(_accuracy_validation)
-            validation_losses.append(_cost_validation)
             test_accuracies.append(_accuracy_test)
             test_losses.append(_cost_test)
 
@@ -177,9 +164,7 @@ with tf.Session() as sess:
     plt.ylabel('Accuracy')
     test_accuracies_legend, = plt.plot(test_accuracies, label='test')
     train_accuracies_legend, = plt.plot(train_accuracies, label='train')
-    validation_accuracies_legend, = plt.plot(validation_accuracies, label='validation')
-    plt.legend([test_accuracies_legend, train_accuracies_legend, validation_accuracies_legend],
-               ['Train', 'Test', 'Validation'])
+    plt.legend([test_accuracies_legend, train_accuracies_legend], ['Train', 'Test'])
 
     plt.subplot(312)
     plt.grid(True)
@@ -187,8 +172,7 @@ with tf.Session() as sess:
     plt.ylabel('MSE')
     train_losses_legend, = plt.plot(train_losses, label='train_mse')
     test_losses_legend, = plt.plot(test_losses, label='test_mse')
-    validation_losses_legend, = plt.plot(validation_losses, label='validation_mse')
-    plt.legend([train_losses_legend, test_losses_legend, validation_losses_legend], ['Test', 'Train', 'Validation'])
+    plt.legend([train_losses_legend, test_losses_legend], ['Test', 'Train'])
 
     plt.subplot(313)
     plt.grid(True)
