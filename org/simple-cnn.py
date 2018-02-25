@@ -1,20 +1,23 @@
 import tensorflow as tf
-from
+from svhn import SVHN
 import matplotlib.pyplot as plt
 import numpy as np
+from random import randint
 
 # Parameters
 learning_rate = 0.001
 iterations = 5000
 batch_size = 50
-display_step = 10
+display_step = 100
 
 # Network Parameters
 channels = 3
 image_size = 32
 n_classes = 10
-dropout = 0.8
-hidden = 128
+dropout = 1.0
+hidden_1 = 512
+hidden_2 = 256
+hidden_3 = 128
 depth_1 = 16
 depth_2 = 32
 depth_3 = 64
@@ -47,22 +50,25 @@ svhn = SVHN("../res", n_classes, use_extra=False, gray=False)
 X = tf.placeholder(tf.float32, [None, image_size, image_size, channels])
 Y = tf.placeholder(tf.float32, [None, n_classes])
 
-
 # Weights & Biases
 weights = {
     "layer1": weight_variable([filter_size, filter_size, channels, depth_1]),
     "layer2": weight_variable([filter_size, filter_size, depth_1, depth_2]),
     "layer3": weight_variable([filter_size, filter_size, depth_2, depth_3]),
-    "layer4": weight_variable([image_size // 8 * image_size // 8 * depth_3, hidden]),
-    "layer5": weight_variable([hidden, n_classes])
+    "layer4": weight_variable([image_size // 8 * image_size // 8 * depth_3, hidden_1]),
+    "layer5": weight_variable([hidden_1, hidden_2]),
+    "layer6": weight_variable([hidden_2, hidden_3]),
+    "layer7": weight_variable([hidden_3, n_classes])
 }
 
 biases = {
     "layer1": bias_variable([depth_1]),
     "layer2": bias_variable([depth_2]),
     "layer3": bias_variable([depth_3]),
-    "layer4": bias_variable([hidden]),
-    "layer5": bias_variable([n_classes])
+    "layer4": bias_variable([hidden_1]),
+    "layer5": bias_variable([hidden_2]),
+    "layer6": bias_variable([hidden_3]),
+    "layer7": bias_variable([n_classes])
 }
 
 
@@ -95,17 +101,17 @@ def cnn(x):
     # Fully Connected Layer
     shape = maxpool3.get_shape().as_list()
     reshape = tf.reshape(maxpool3, [-1, shape[1] * shape[2] * shape[3]])
-    fc = tf.nn.relu(tf.matmul(reshape, weights["layer4"]) + biases["layer4"])
+    fc4 = tf.nn.relu(tf.matmul(reshape, weights["layer4"]) + biases["layer4"])
 
-    # Dropout Layer
-    keep_prob_constant = tf.placeholder(tf.float32)
-    dropout_layer = tf.nn.dropout(fc, keep_prob_constant)
+    fc5 = tf.nn.relu(tf.matmul(fc4, weights["layer5"]) + biases["layer5"])
+    fc6 = tf.nn.relu(tf.matmul(fc5, weights["layer6"]) + biases["layer6"])
+    y_conv = tf.nn.relu(tf.matmul(fc6, weights["layer7"]) + biases["layer7"])
 
-    return tf.matmul(dropout_layer, weights["layer5"]) + biases["layer5"], keep_prob_constant
+    return y_conv
 
 
 # Build the graph for the deep net
-y_conv, keep_prob = cnn(X)
+y_conv = cnn(X)
 
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y_conv))
 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(cost)
@@ -127,70 +133,39 @@ with tf.Session() as sess:
     test_losses = []
 
     for i in range(iterations):
-        # Construct the batch
-        if start == svhn.train_examples:
-            start = 0
-        end = min(svhn.train_examples, start + batch_size)
+        ind_train = [randint(0, svhn.train_examples - 1) for _ in range(batch_size)]
+        ind_test = [randint(0, svhn.test_examples - 1) for _ in range(batch_size)]
 
-        batch_x = svhn.train_data[start:end]
-        batch_y = svhn.train_labels[start:end]
+        batch_x = svhn.train_data[ind_train]
+        batch_y = svhn.train_labels[ind_train]
 
-        start = end
+        batch_x_test = svhn.test_data[ind_test]
+        batch_y_test = svhn.test_labels[ind_test]
 
-        # Run the optimizer
-        sess.run(optimizer, feed_dict={X: batch_x, Y: batch_y, keep_prob: dropout})
+        sess.run(optimizer, feed_dict={X: batch_x, Y: batch_y})
 
         if (i + 1) % display_step == 0 or i == 0:
-            _accuracy, _cost = sess.run([accuracy, cost], feed_dict={X: batch_x, Y: batch_y, keep_prob: 1.0})
-            print("Step: {0:6d}, Training Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy, _cost))
-            train_accuracies.append(_accuracy)
-            train_losses.append(_cost)
+            _accuracy_train, _cost_train = sess.run([accuracy, cost],
+                                                    feed_dict={X: batch_x, Y: batch_y})
+            _accuracy_test, _cost_test = sess.run([accuracy, cost],
+                                                  feed_dict={X: batch_x_test, Y: batch_y_test})
+            print("Step: {0:6d}, Training Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_train,
+                                                                                       _cost_train))
+            print("Step: {0:6d}, Test Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_test,
+                                                                                   _cost_test))
+            train_accuracies.append(_accuracy_train)
+            train_losses.append(_cost_train)
+            test_accuracies.append(_accuracy_test)
+            test_losses.append(_cost_test)
 
-    # Test the model by measuring it's accuracy
-    test_iterations = np.rint(svhn.test_examples / batch_size) + 1
-    print(test_iterations)
-    for j in range(test_iterations):
-        batch_x, batch_y = (svhn.test_data[j * batch_size:(j + 1) * batch_size],
-                            svhn.test_labels[j * batch_size:(j + 1) * batch_size])
-        _accuracy, _cost = sess.run([accuracy, cost], feed_dict={X: batch_x, Y: batch_y, keep_prob: 1.0})
-        test_accuracies.append(_accuracy)
-        test_losses.append(_cost)
-    print("Mean Test Accuracy: {0:5f}, Mean Test Loss: {1:5f}".format(np.mean(test_accuracies), np.mean(test_losses)))
+    plt.style.use('ggplot')
 
-    # Plot batch accuracy and loss for both train and test sets
-    plt.style.use("ggplot")
-    fig, ax = plt.subplots(2, 2)
+    plt.figure('Accuracy')
+    plt.plot(train_accuracies)
+    plt.plot(test_accuracies)
 
-    # Train Accuracy
-    ax[0, 0].set_title("Train Accuracy per Batch")
-    ax[0, 0].set_xlabel("Batch")
-    ax[0, 0].set_ylabel("Accuracy")
-    ax[0, 0].set_ylim([0, 1.05])
-    ax[0, 0].plot(range(0, iterations + 1, display_step), train_accuracies, linewidth=1, color="darkgreen")
-
-    # Train Loss
-    ax[0, 1].set_title("Train Loss per Batch")
-    ax[0, 1].set_xlabel("Batch")
-    ax[0, 1].set_ylabel("Loss")
-    ax[0, 1].set_ylim([0, max(train_losses)])
-    ax[0, 1].plot(range(0, iterations + 1, display_step), train_losses, linewidth=1, color="darkred")
-
-    # TestAccuracy
-    ax[1, 0].set_title("Test Accuracy per Batch")
-    ax[1, 0].set_xlabel("Batch")
-    ax[1, 0].set_ylabel("Accuracy")
-    ax[1, 0].set_ylim([0, 1.05])
-    ax[1, 0].plot(range(0, test_iterations), test_accuracies, linewidth=1, color="darkgreen")
-
-    # Test Loss
-    ax[1, 1].set_title("Test Loss per Batch")
-    ax[1, 1].set_xlabel("Batch")
-    ax[1, 1].set_ylabel("Loss")
-    ax[1, 1].set_ylim([0, max(test_losses)])
-    ax[1, 1].plot(range(0, test_iterations), test_losses, linewidth=1, color="darkred")
-
-    for i in range(1, iterations, svhn.train_examples / batch_size):
-        ax[0, 0].axvline(x=i, ymin=0, ymax=1.05, linewidth=2, color="orange", label="skdlhv")
-        ax[0, 1].axvline(x=i, ymin=0, ymax=max(train_losses), linewidth=2, color="orange")
+    plt.figure('Loss')
+    plt.plot(train_losses)
+    plt.plot(test_losses)
 
     plt.show()
