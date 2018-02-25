@@ -1,23 +1,20 @@
 import tensorflow as tf
 from svhn import SVHN
 import matplotlib.pyplot as plt
-import numpy as np
 from random import randint
 
 # Parameters
-learning_rate = 0.001
+learning_rate = 1e-3
 iterations = 5000
-batch_size = 50
+batch_size = 500
 display_step = 100
 
 # Network Parameters
 channels = 3
 image_size = 32
 n_classes = 10
-dropout = 1.0
-hidden_1 = 512
-hidden_2 = 256
-hidden_3 = 128
+dropout = 0.8
+hidden = 128
 depth_1 = 16
 depth_2 = 32
 depth_3 = 64
@@ -55,20 +52,16 @@ weights = {
     "layer1": weight_variable([filter_size, filter_size, channels, depth_1]),
     "layer2": weight_variable([filter_size, filter_size, depth_1, depth_2]),
     "layer3": weight_variable([filter_size, filter_size, depth_2, depth_3]),
-    "layer4": weight_variable([image_size // 8 * image_size // 8 * depth_3, hidden_1]),
-    "layer5": weight_variable([hidden_1, hidden_2]),
-    "layer6": weight_variable([hidden_2, hidden_3]),
-    "layer7": weight_variable([hidden_3, n_classes])
+    "layer4": weight_variable([image_size // 8 * image_size // 8 * depth_3, hidden]),
+    "layer5": weight_variable([hidden, n_classes])
 }
 
 biases = {
     "layer1": bias_variable([depth_1]),
     "layer2": bias_variable([depth_2]),
     "layer3": bias_variable([depth_3]),
-    "layer4": bias_variable([hidden_1]),
-    "layer5": bias_variable([hidden_2]),
-    "layer6": bias_variable([hidden_3]),
-    "layer7": bias_variable([n_classes])
+    "layer4": bias_variable([hidden]),
+    "layer5": bias_variable([n_classes])
 }
 
 
@@ -101,17 +94,17 @@ def cnn(x):
     # Fully Connected Layer
     shape = maxpool3.get_shape().as_list()
     reshape = tf.reshape(maxpool3, [-1, shape[1] * shape[2] * shape[3]])
-    fc4 = tf.nn.relu(tf.matmul(reshape, weights["layer4"]) + biases["layer4"])
+    fc = tf.nn.relu(tf.matmul(reshape, weights["layer4"]) + biases["layer4"])
 
-    fc5 = tf.nn.relu(tf.matmul(fc4, weights["layer5"]) + biases["layer5"])
-    fc6 = tf.nn.relu(tf.matmul(fc5, weights["layer6"]) + biases["layer6"])
-    y_conv = tf.nn.relu(tf.matmul(fc6, weights["layer7"]) + biases["layer7"])
+    # Dropout Layer
+    keep_prob_constant = tf.placeholder(tf.float32)
+    dropout_layer = tf.nn.dropout(fc, keep_prob_constant)
 
-    return y_conv
+    return tf.matmul(dropout_layer, weights["layer5"]) + biases["layer5"], keep_prob_constant
 
 
 # Build the graph for the deep net
-y_conv = cnn(X)
+y_conv, keep_prob = cnn(X)
 
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y_conv))
 optimizer = tf.train.AdamOptimizer(learning_rate).minimize(cost)
@@ -142,13 +135,13 @@ with tf.Session() as sess:
         batch_x_test = svhn.test_data[ind_test]
         batch_y_test = svhn.test_labels[ind_test]
 
-        sess.run(optimizer, feed_dict={X: batch_x, Y: batch_y})
+        sess.run(optimizer, feed_dict={X: batch_x, Y: batch_y, keep_prob: 0.8})
 
         if (i + 1) % display_step == 0 or i == 0:
             _accuracy_train, _cost_train = sess.run([accuracy, cost],
-                                                    feed_dict={X: batch_x, Y: batch_y})
+                                                    feed_dict={X: batch_x, Y: batch_y, keep_prob: 1.0})
             _accuracy_test, _cost_test = sess.run([accuracy, cost],
-                                                  feed_dict={X: batch_x_test, Y: batch_y_test})
+                                                  feed_dict={X: batch_x_test, Y: batch_y_test, keep_prob: 1.0})
             print("Step: {0:6d}, Training Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_train,
                                                                                        _cost_train))
             print("Step: {0:6d}, Test Accuracy: {1:5f}, Batch Loss: {2:5f}".format(i + 1, _accuracy_test,
