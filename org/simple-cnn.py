@@ -1,5 +1,5 @@
 import tensorflow as tf
-from svhn import SVHN
+from
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -149,7 +149,7 @@ with tf.Session() as sess:
     # Test the model by measuring it's accuracy
     test_iterations = np.rint(svhn.test_examples / batch_size) + 1
     print(test_iterations)
-    for j in range(552):
+    for j in range(test_iterations):
         batch_x, batch_y = (svhn.test_data[j * batch_size:(j + 1) * batch_size],
                             svhn.test_labels[j * batch_size:(j + 1) * batch_size])
         _accuracy, _cost = sess.run([accuracy, cost], feed_dict={X: batch_x, Y: batch_y, keep_prob: 1.0})
